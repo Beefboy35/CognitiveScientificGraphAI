@@ -111,7 +111,7 @@ npm run dev
 
 ---
 
-## Архитектура (TZ §3)
+## Архитектура
 
 ```
 PDF / Text Upload
@@ -150,7 +150,6 @@ Evaluation (8 метрик) ──► Feedback Loop (applies deltas + review que
 
 ---
 
-## Соответствие ТЗ §12.3 («отлично — 10/10»)
 
 | # | Требование | Где реализовано |
 |---|---|---|
@@ -168,26 +167,6 @@ Evaluation (8 метрик) ──► Feedback Loop (applies deltas + review que
 
 ---
 
-## Сценарий защиты (TZ §13)
-
-Полный пошаговый план — в [docs/defense_script.md](docs/defense_script.md). Краткая
-канва:
-
-1. `docker compose --profile dev up` → 8 контейнеров `healthy`.
-2. `GET /health` → статус PostgreSQL/Neo4j + embedding provider.
-3. Загрузить PDF → показать `processing_job` со всеми 12 steps.
-4. Запросить `/v1/knowledge/entities`, `/v1/knowledge/claims`, `/v1/graph/scientific`.
-5. Открыть **Lab**-вкладку фронтенда → переключаться между 4 режимами поиска,
-   видеть **ScoreBreakdown** по 7 компонентам, наблюдать **ReasoningTrace**.
-6. Задать вопрос без evidence → честный отказ.
-7. Лайкнуть/дизлайкнуть claim → видеть запись в `feedback_events` и
-   review-queue → разобрать вручную.
-8. Открыть Neo4j Browser → выполнить `MATCH (a:Publication)-[r]-(c:ScientificClaim)`.
-9. Запустить `pytest backend/tests/test_demo_coverage.py` → все 8 ассертов
-   подтверждают полное покрытие онтологии (TZ §3.9).
-
----
-
 ## Тесты
 
 ```bash
@@ -195,7 +174,7 @@ cd backend
 python -m pytest tests/test_demo_coverage.py -v
 ```
 
-Ожидаемо: 8 passed (TZ §3.9 — domain ontology coverage).
+Ожидаемо: 8 passed.
 
 ```bash
 cd frontend
@@ -207,7 +186,7 @@ npm run build
 
 ---
 
-## Безопасность (TZ §7.3)
+## Безопасность
 
 - Все секреты — только через переменные окружения (`.env`, не в git).
 - `.env.example` содержит **только placeholder'ы** ("changeme_*").
@@ -219,9 +198,6 @@ npm run build
 
 ## Документация
 
-- [TT.md](TT.md) — техническое задание v2.0 (исходное)
 - [docs/architecture.md](docs/architecture.md) — компонентная диаграмма + sequence
 - [docs/data_model.md](docs/data_model.md) — ER PostgreSQL + Neo4j schema
 - [docs/api.md](docs/api.md) — справочник 35+ endpoints с curl-примерами
-- [docs/defense_script.md](docs/defense_script.md) — пошаговый сценарий защиты
-- [docs/SCIENTIFIC_KB_ARCHITECTURE.md](docs/SCIENTIFIC_KB_ARCHITECTURE.md) — предыдущая версия (для истории)
