@@ -1,0 +1,27 @@
+# node_modules
+frontend/node_modules/
+
+# Env files
+.env
+.env.*
+!.env.example
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+
+# Python virtualenv
+.venv/
+venv/
+.vite
+
+# Data & Databases
+data/
+backend/src/kb/processed/
+*.log
+*.sqlite

@@ -1,0 +1,149 @@
+CognitiveBaseAI Non-Commercial License
+Version 1.0, 2026-05-18
+
+Copyright (c) 2026 BeefBoy35. All rights reserved.
+
+================================================================
+SHORT SUMMARY (informational, not legally binding)
+================================================================
+
+Этот программный продукт («Программа») создан и принадлежит BeefBoy35.
+
+Вы можете:
+  • изучать исходный код Программы;
+  • запускать Программу для личного, учебного, научно-исследовательского
+    или некоммерческого использования;
+  • вносить изменения в Программу для перечисленных выше целей;
+  • распространять немодифицированные или модифицированные копии Программы
+    при условии сохранения настоящей лицензии и указания авторства.
+
+Вы НЕ можете без письменного предварительного согласия автора:
+  • использовать Программу или её производные в коммерческих целях
+    (включая использование внутри коммерческой организации, продажу,
+    предоставление в аренду, размещение в качестве платного сервиса,
+    интеграцию в коммерческий продукт);
+  • использовать имя «CognitiveBaseAI» или «BeefBoy35» как товарный знак;
+  • снимать с продукта это уведомление об авторстве.
+
+Для получения разрешения на коммерческое использование свяжитесь с автором
+заранее. Любое коммерческое использование без письменного согласия является
+нарушением настоящей лицензии и может повлечь юридическую ответственность.
+
+================================================================
+FULL LICENSE TEXT (legally binding)
+================================================================
+
+1. DEFINITIONS
+
+   "Software" means the CognitiveBaseAI software (source code, binaries,
+   documentation, demonstration corpus and configuration) made available
+   under this License by BeefBoy35.
+
+   "Licensor" means BeefBoy35, the copyright holder.
+
+   "You" (or "Your") means an individual or legal entity exercising
+   permissions granted by this License.
+
+   "Non-Commercial Use" means use of the Software:
+     a) by an individual for personal, educational, academic, or
+        non-profit research purposes; OR
+     b) by a non-profit organisation, school, university, or similar
+        institution, where no monetary or other consideration is exchanged
+        in connection with the use of the Software; OR
+     c) for the purpose of evaluating the Software prior to negotiating
+        a commercial license, for a period not exceeding 30 days.
+
+   "Commercial Use" means any use of the Software that does not fall
+   within Non-Commercial Use, including but not limited to:
+     - Use within a for-profit organisation in any capacity;
+     - Distribution of the Software (or any derivative thereof) for
+       monetary or other consideration;
+     - Offering the Software as a hosted, paid or sponsored service;
+     - Incorporation of the Software (or any derivative thereof) into a
+       product or service that is sold, licensed for a fee, or otherwise
+       monetised, whether directly or indirectly (e.g. advertising,
+       sponsored content);
+     - Use in connection with the development, training or operation of
+       commercial machine-learning models or paid AI services.
+
+2. GRANT OF LICENSE
+
+   Subject to the terms and conditions of this License, the Licensor
+   hereby grants You a worldwide, royalty-free, non-exclusive,
+   non-transferable, non-sublicensable license to use, reproduce,
+   prepare derivative works of, publicly display, publicly perform,
+   and distribute the Software, **solely for Non-Commercial Use**, as
+   defined above.
+
+3. RESTRICTIONS
+
+   3.1. Commercial Use of the Software, in whole or in part, is prohibited
+        without the prior written consent of the Licensor. To request
+        such consent, contact the Licensor before commencing any
+        Commercial Use.
+
+   3.2. You must retain, in all copies of the Software and any derivative
+        works, this License notice and all copyright, patent, trademark
+        and attribution notices from the original Software.
+
+   3.3. You may not use the name "CognitiveScientificGraphAI", "BeefBoy35", or any
+        confusingly similar mark, to endorse or promote products derived
+        from the Software without prior written consent.
+
+   3.4. You may not remove or alter any copyright, attribution or license
+        notices from the Software.
+
+4. NO TRADEMARK RIGHTS
+
+   This License does not grant You any right to use any trade names,
+   trademarks, service marks or product names of the Licensor, except
+   as required for describing the origin of the Software and reproducing
+   the content of this License.
+
+5. CONTRIBUTIONS
+
+   Any contribution intentionally submitted for inclusion in the Software
+   by You to the Licensor shall be under the terms of this License,
+   without any additional terms or conditions, unless explicitly agreed
+   otherwise in writing by the Licensor.
+
+6. DISCLAIMER OF WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+   OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE AND
+   NON-INFRINGEMENT. IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+7. TERMINATION
+
+   7.1. This License is effective until terminated.
+
+   7.2. Your rights under this License shall terminate automatically
+        and immediately, without notice, upon Your breach of any of its
+        terms — in particular upon any unauthorised Commercial Use.
+
+   7.3. Upon termination, You must immediately cease all use of the
+        Software and destroy all copies in Your possession or control.
+
+   7.4. Sections 4 (No Trademark Rights), 6 (Disclaimer of Warranty),
+        7 (Termination) and 8 (Governing Law) survive termination.
+
+8. GOVERNING LAW
+
+   This License shall be governed by and construed in accordance with
+   the laws of the Russian Federation, without regard to conflict-of-law
+   principles. Any dispute arising under or in connection with this
+   License shall be resolved in the competent courts of the Russian
+   Federation.
+
+9. CONTACT FOR COMMERCIAL LICENSING
+
+   To obtain a commercial license, partnership terms, or any waiver of
+   the restrictions set forth in Section 3, please contact the Licensor
+   prior to use (https://github.com/Beefboy35). The Licensor reserves the sole and exclusive right to
+   grant or refuse such consent on a case-by-case basis.
+
+END OF LICENSE
