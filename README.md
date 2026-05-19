@@ -1,5 +1,6 @@
 # CognitiveBaseAI — Evidence-based Scientific Reasoning Engine
 
+[![CI](https://github.com/Beefboy35/CognitiveBaseAI/actions/workflows/ci.yml/badge.svg)](https://github.com/Beefboy35/CognitiveBaseAI/actions/workflows/ci.yml)
 [![License: Non-Commercial](https://img.shields.io/badge/license-Non--Commercial-orange)](LICENSE)
 
 > Интеллектуальная база знаний научных публикаций, которая преобразует
