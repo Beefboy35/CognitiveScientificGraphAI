@@ -1,5 +1,7 @@
 # CognitiveBaseAI — Evidence-based Scientific Reasoning Engine
 
+[![License: Non-Commercial](https://img.shields.io/badge/license-Non--Commercial-orange)](LICENSE)
+
 > Интеллектуальная база знаний научных публикаций, которая преобразует
 > неструктурированный текст в проверяемые **scientific claims**, evidence и
 > взвешенный граф знаний, а затем отвечает на вопросы со ссылкой на источники,
