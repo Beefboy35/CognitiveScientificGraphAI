@@ -6,6 +6,7 @@ import {
   evaluateRagAnswer,
   evaluationAggregate,
   getActivationKeys,
+  listClaims,
   listEntities,
   listFeedbackEvents,
   listReviewQueue,
@@ -21,6 +22,7 @@ import { ReasoningTrace } from '../../shared/ui/ReasoningTrace'
 import { ScoreBreakdown } from '../../shared/ui/ScoreBreakdown'
 import type {
   Activation,
+  Claim,
   ClaimRelation,
   Evaluation,
   FeedbackEvent,
@@ -30,6 +32,15 @@ import type {
   ScientificEntity,
   SearchHit,
 } from '../../shared/types/scientific-kb'
+
+// Метки типов связей на русском и английском, чтобы пользователь не видел
+// сырое `supports/contradicts/limits/extends`.
+const RELATION_LABEL: Record<string, { ru: string; en: string }> = {
+  supports: { ru: 'подтверждает', en: 'supports' },
+  contradicts: { ru: 'противоречит', en: 'contradicts' },
+  limits: { ru: 'ограничивает', en: 'limits' },
+  extends: { ru: 'развивает', en: 'extends' },
+}
 
 type SearchMode = 'keyword' | 'semantic' | 'graph' | 'hybrid'
 
@@ -60,22 +71,27 @@ export function LabPage({ t, locale, defaultQuestion, defaultSearch, onError }: 
   const [entityType, setEntityType] = useState('')
   const [relationType, setRelationType] = useState('')
   const [relations, setRelations] = useState<ClaimRelation[]>([])
+  // Claims нужны чтобы показывать в "Связях" реальный текст source/target,
+  // а не голые id'шники. Map<id, Claim> строится в useMemo ниже.
+  const [claims, setClaims] = useState<Claim[]>([])
   const [feedback, setFeedback] = useState<FeedbackEvent[]>([])
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([])
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
-      const [agg, ents, rels, fb, rv] = await Promise.all([
+      const [agg, ents, rels, cls, fb, rv] = await Promise.all([
         evaluationAggregate(),
         listEntities(),
         listRelations(),
+        listClaims(),
         listFeedbackEvents(),
         listReviewQueue(),
       ])
       setAggregate(agg)
       setEntities(ents)
       setRelations(rels)
+      setClaims(cls)
       setFeedback(fb)
       setReviewItems(rv.items)
     } catch (err) {
@@ -182,8 +198,29 @@ export function LabPage({ t, locale, defaultQuestion, defaultSearch, onError }: 
   const entityTypes = Array.from(new Set(entities.map((e) => e.entity_type))).sort()
   const relationTypes: Array<ClaimRelation['relation_type']> = ['supports', 'contradicts', 'limits', 'extends']
 
+  // Индекс claim'ов по id для отрисовки текста source/target в "Связях".
+  const claimById = new Map(claims.map((c) => [c.id, c]))
+
+  // Человеко-читаемая «сила связи» по весу (используется в чипе).
+  const strengthLabel = (weight: number) =>
+    weight >= 0.7
+      ? (locale === 'ru' ? 'сильная' : 'strong')
+      : weight >= 0.4
+      ? (locale === 'ru' ? 'средняя' : 'medium')
+      : (locale === 'ru' ? 'слабая' : 'weak')
+
   return (
     <div className="lab-page">
+      {/* Intro — объясняет, что такое раздел Лаб и для чего он. */}
+      <section className="lab-intro card-strong">
+        <h1>{locale === 'ru' ? 'Лаборатория знаний' : 'Knowledge lab'}</h1>
+        <p className="muted">
+          {locale === 'ru'
+            ? 'Здесь можно сравнить четыре режима поиска (ключевой / семантический / графовый / гибридный), задать вопрос с разбором цепочки вывода (RAG), посмотреть, какие сущности и связи извлечены из корпуса, и разобрать очередь ручной проверки.'
+            : 'This page lets you compare four search modes (keyword / semantic / graph / hybrid), ask a question with a full reasoning trace (RAG), explore extracted entities and relations, and resolve the human-review queue.'}
+        </p>
+      </section>
+
       <section className="lab-section card-strong">
         <header className="lab-section-header">
           <h2>{t.search} · {t.score}</h2>
@@ -326,29 +363,71 @@ export function LabPage({ t, locale, defaultQuestion, defaultSearch, onError }: 
 
       <section className="lab-section card-strong">
         <header className="lab-section-header">
-          <h2>{t.relations}</h2>
+          <h2>
+            {t.relations}
+            <small className="muted lab-section-hint">
+              {' '}— {locale === 'ru'
+                ? 'кто что подтверждает, развивает, ограничивает или опровергает'
+                : 'which claim supports / extends / limits / contradicts which'}
+            </small>
+          </h2>
           <div className="lab-toolbar">
             <button className={`chip ${relationType === '' ? 'active' : ''}`} onClick={() => setRelationType('')}>{t.all}</button>
             {relationTypes.map((type) => (
               <button key={type} className={`chip ${relationType === type ? 'active' : ''}`} onClick={() => setRelationType(type)}>
-                {type}
+                {RELATION_LABEL[type]?.[locale] ?? type}
               </button>
             ))}
           </div>
         </header>
         <ul className="lab-relations scrollable">
-          {filteredRelations.slice(0, 40).map((rel) => (
-            <li className="lab-relation" key={rel.id}>
-              <span className={`tag ${rel.relation_type === 'contradicts' ? 'danger' : rel.relation_type === 'limits' ? 'warn' : rel.relation_type === 'extends' ? 'violet' : 'success'}`}>
-                {rel.relation_type}
-              </span>
-              <div className="score-bar" style={{ flex: 1 }}>
-                <span style={{ width: `${Math.round(rel.weight * 100)}%` }} />
-              </div>
-              <strong>{rel.weight.toFixed(2)}</strong>
-              {rel.rationale && <small className="muted">{rel.rationale}</small>}
-            </li>
-          ))}
+          {filteredRelations.length === 0 && <li className="empty-state">{locale === 'ru' ? 'Связей не найдено' : 'No relations found'}</li>}
+          {filteredRelations.slice(0, 40).map((rel) => {
+            const src = claimById.get(rel.source_claim_id)
+            const tgt = claimById.get(rel.target_claim_id)
+            const verb = RELATION_LABEL[rel.relation_type]?.[locale] ?? rel.relation_type
+            const tagClass =
+              rel.relation_type === 'contradicts' ? 'danger'
+              : rel.relation_type === 'limits' ? 'warn'
+              : rel.relation_type === 'extends' ? 'violet'
+              : 'success'
+            return (
+              <li className="lab-relation" key={rel.id}>
+                <header className="lab-relation-header">
+                  <span className={`tag ${tagClass}`}>{verb}</span>
+                  <span className="muted lab-relation-strength">{strengthLabel(rel.weight)}</span>
+                  <div className="score-bar lab-relation-bar">
+                    <span style={{ width: `${Math.round(rel.weight * 100)}%` }} />
+                  </div>
+                  <strong>{Math.round(rel.weight * 100)}%</strong>
+                </header>
+                <div className="lab-relation-body">
+                  <div className="lab-relation-claim">
+                    <span className="muted lab-relation-role">
+                      {locale === 'ru' ? 'Источник' : 'From'}
+                    </span>
+                    <span className="lab-relation-text">
+                      {src?.claim_text ?? rel.source_claim_id}
+                    </span>
+                  </div>
+                  <span className="lab-relation-arrow">↓</span>
+                  <div className="lab-relation-claim">
+                    <span className="muted lab-relation-role">
+                      {locale === 'ru' ? 'Цель' : 'To'}
+                    </span>
+                    <span className="lab-relation-text">
+                      {tgt?.claim_text ?? rel.target_claim_id}
+                    </span>
+                  </div>
+                </div>
+                {rel.rationale && (
+                  <footer className="lab-relation-rationale muted">
+                    <span>{locale === 'ru' ? 'Почему связь:' : 'Why:'}</span> {rel.rationale}
+                  </footer>
+                )}
+              </li>
+            )
+          })}
         </ul>
       </section>
 

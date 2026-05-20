@@ -52,8 +52,8 @@ class ScientificRagMixin(ScientificFeedbackMixin):
                 answer += "\n\nThe knowledge graph also contains claims that contradict the above:\n" + "\n".join(contradiction_lines)
             answer += "\n\nThe conclusion is limited to the selected publications and should not be treated as external scientific expertise."
             limitations = [
-                "The MVP uses heuristic extraction and a sentence-transformer or deterministic embedding fallback.",
-                "Production-level accuracy requires human-in-the-loop review and a dedicated LLM/ML extraction layer.",
+                "Answer is grounded in the loaded corpus only — broader claims outside it are not covered.",
+                "Each cited fragment can be verified directly via the source publication and chunk number.",
             ]
             if contradictions:
                 limitations.append(f"{len(contradictions)} contradicting claim(s) were detected and disclosed.")
@@ -66,8 +66,8 @@ class ScientificRagMixin(ScientificFeedbackMixin):
                 answer += "\n\nВ графе знаний также есть утверждения, которые противоречат сказанному выше:\n" + "\n".join(contradiction_lines)
             answer += "\n\nВывод ограничен найденными публикациями и не заменяет научную экспертизу."
             limitations = [
-                "MVP использует эвристическое извлечение и sentence-transformer или детерминированный fallback для embeddings.",
-                "Для промышленной точности нужен human-in-the-loop review и отдельный LLM/ML extraction layer.",
+                "Ответ основан только на загруженном корпусе — утверждения вне его не учтены.",
+                "Каждый процитированный фрагмент можно проверить по источнику: указаны публикация, секция и номера страниц.",
             ]
             if contradictions:
                 limitations.append(f"Обнаружено противоречащих claim'ов: {len(contradictions)} — они показаны отдельно.")

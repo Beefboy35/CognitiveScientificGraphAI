@@ -1,4 +1,6 @@
+import uuid
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -12,9 +14,24 @@ from app.api.common import ApiError
 from app.api.scientific_kb import router as scientific_kb_router
 from app.config.settings import settings
 from app.features.scientific_kb import bootstrap_persistence
-from app.core.correlation import get_correlation_id, new_correlation_id, set_correlation_id
-from app.core.logging import logger, setup_logging
+from loguru import logger
 
+# ── Correlation-ID context (минималистичная замена удалённого app.core.correlation) ──
+# В одном проекте FastAPI/уvicorn ContextVar читается из task'а текущего запроса,
+# что даёт thread-safe correlation-id даже под нагрузкой.
+_CORRELATION_ID: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+
+
+def new_correlation_id() -> str:
+    return "cid-" + uuid.uuid4().hex[:12]
+
+
+def set_correlation_id(value: str | None) -> None:
+    _CORRELATION_ID.set(value)
+
+
+def get_correlation_id() -> str | None:
+    return _CORRELATION_ID.get()
 try:
     from prometheus_client import Counter, Histogram, generate_latest
 except Exception:
@@ -55,7 +72,6 @@ tags_metadata = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_logging()
     logger.info("startup_scientific_kb")
     try:
         status = bootstrap_persistence()

@@ -239,8 +239,29 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   font-size: 13px;
+}
+
+/* Каждый пункт списка claims/evidence — собственный блок, чтобы чип
+   типа (DEFINITION/METHOD_DESCRIPTION/…) не перекрывал длинный текст. */
+.reasoning-list > li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  line-height: 1.4;
+}
+
+.reasoning-list > li > .tag {
+  align-self: flex-start;
+}
+
+.reasoning-list > li > .muted {
+  word-break: break-word;
 }
 
 .reasoning-answer {
@@ -331,21 +352,104 @@
   gap: 6px;
 }
 
+/* Карточка связи: верх — chip типа + сила + bar + %, ниже — source→target
+   с реальным текстом claim'ов, в подвале — обоснование (rationale).
+   Это решает жалобу «не обоснованные связи кто зачем куда». */
 .lab-relation {
-  display: grid;
-  grid-template-columns: 130px minmax(0, 1fr) 60px minmax(0, 1.5fr);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: center;
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--surface-2);
 }
 
-.lab-relation small {
+.lab-relation-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.lab-relation-strength {
   font-size: 11px;
-  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lab-relation-bar {
+  flex: 1;
+  min-width: 120px;
+}
+
+.lab-relation-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.lab-relation-claim {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.lab-relation-role {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lab-relation-text {
+  font-size: 12.5px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.lab-relation-arrow {
+  font-size: 18px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1;
+}
+
+.lab-relation-rationale {
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  word-break: break-word;
+}
+
+.lab-relation-rationale > span {
+  font-weight: 700;
+}
+
+.lab-section-hint {
+  font-weight: 400;
+  font-size: 13px;
+}
+
+/* Intro-блок раздела Лаб. */
+.lab-intro {
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.lab-intro h1 {
+  margin: 0 0 6px 0;
+  font-size: 22px;
+}
+
+.lab-intro p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .lab-review {

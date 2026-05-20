@@ -153,6 +153,222 @@ Evaluation (8 метрик) ──► Feedback Loop (applies deltas + review que
 
 ---
 
+## Раздел «Лаб.» — что это и как пользоваться
+
+Lab — это **полный цикл работы со знаниями** в одном экране: понять как извлекаются знания (3), сравнить как они ищутся (1), увидеть как формируется ответ (2), скорректировать качество (4).
+
+```
+        Извлечение из публикации
+                  ↓
+   ┌── Реестр сущностей + связей (3) ──┐
+   ▼                                    ▼
+Сравнение режимов поиска (1) ──► RAG ответ + reasoning trace (2)
+                                        │
+                                        ▼ feedback от юзера
+                              Очередь проверки (4)
+                                        │ approve / reject
+                                        ▼
+                              обновление весов claim'ов
+                                        │
+                                        └─► улучшает следующий RAG-ответ
+```
+
+### 1. Сравнение режимов поиска
+
+Четыре режима отвечают на один вопрос — «найди в корпусе самые релевантные фрагменты для запроса» — но используют разные источники сигнала.
+
+| Режим | Источник сигнала | Как считается score | Когда полезен |
+|---|---|---|---|
+| **Ключевой** ([search_keyword](backend/app/features/scientific_kb/search.py)) | Точное совпадение слов запроса в тексте chunk'ов и claim'ов (с расширением через `ALIASES`) | `overlap / max(1, len(query_tokens))` | Когда пользователь уже знает термин («JOIN», «двоичный поиск») |
+| **Семантический** ([search_semantic](backend/app/features/scientific_kb/search.py)) | Cosine similarity между 384-dim векторами вопроса и chunk'а через `pgvector` HNSW | `cosine_similarity` от 0 до 1 | Когда вопрос задан «своими словами» без точной терминологии |
+| **Графовый** ([search_graph](backend/app/features/scientific_kb/search.py)) | `activation_index[token]` → активированные claim'ы + их соседи по рёбрам SUPPORTS/CONTRADICTS/EXTENDS/LIMITS | `0.45 + relation_bonus / 4.0` | «Покажи всё, что связано с X» — graph подтянет cluster |
+| **Гибридный** ([search_hybrid](backend/app/features/scientific_kb/search.py)) | Объединение всех трёх + 4 компонента качества | См. формулу ниже | Production — это итоговый score, остальные три для дебага |
+
+**Полная hybrid-формула** (TT.md §3.7):
+```
+hybrid_score = α·keyword + β·semantic + γ·(graph + 0.5·activation)
+             + δ·claim_confidence + ε·evidence_strength + ζ·source_reliability
+             − η·contradiction_risk
+
+веса по умолчанию: α=0.15, β=0.35, γ=0.20, δ=0.10, ε=0.15, ζ=0.05, η=0.10
+```
+
+`ScoreBreakdown` в Lab разбивает финальный score на 7 слагаемых — видно, какой канал сильнее всего вытянул конкретный hit.
+
+### 2. RAG с reasoning trace
+
+Обычный LLM-чат отвечает «откуда-то», и проверить ответ нельзя. RAG ([rag.py:ask_with_evidence](backend/app/features/scientific_kb/rag.py)) сначала **ищет**, потом **отвечает на основе найденного**, и **показывает все источники**.
+
+**7 этапов цепочки**:
+1. **Question** — сам вопрос пользователя
+2. **Activation keys** — токены вопроса + синонимы из ALIASES
+3. **Entities** — сущности онтологии, активированные этими токенами
+4. **Claims** — утверждения, упоминающие эти сущности
+5. **Evidence** — chunk'и из публикаций, на которых основаны claim'ы (с указанием публикации и страниц)
+6. **Aggregation / Contradiction disclosure** — сбор top-4 claim'ов + явное упоминание найденных противоречий
+7. **Grounded answer** — финальный ответ + раздел Limitations (что НЕ покрыто)
+
+**Honest refusal**: если `strong_hits < 2` или `coverage < 0.16`, RAG отказывается отвечать. Это защита от галлюцинаций — лучше «недостаточно данных», чем выдуманный ответ.
+
+**Evaluation**: кнопка «Оценить» считает 8 метрик (faithfulness, hallucination_rate, citation_correctness, contradiction_awareness, и др.) и автоматически создаёт feedback_event для каждого source-claim'а.
+
+### 3. Реестр сущностей и связей
+
+Полный аудит того, что система извлекла из корпуса:
+
+- **Сущности** (`ScientificEntity`): канонические понятия из ontology с aliases (`Method` / `Model` / `Tool` / `Metric` / `Task` / `Dataset` / `ResearchField`).
+- **Связи** (`ClaimRelation`): направленные рёбра claim ↔ claim четырёх типов:
+  - **SUPPORTS** — определение/метод из разных публикаций согласуются
+  - **EXTENDS** — один claim явно развивает идею другого (text marker «развивает / опирается на»)
+  - **LIMITS** — limitation-claim ограничивает применимость method/conclusion
+  - **CONTRADICTS** — противоположные значения метрики или text marker «в отличие от / противоречит»
+
+Каждая связь хранит `created_by ∈ {rule, llm, manual}` для аудита. Связи генерируются **строго по evidence** — никаких искусственных для покрытия онтологии.
+
+### 4. Очередь human-in-the-loop проверки
+
+Автоматическое извлечение не идеально. Пользователь должен иметь возможность отбраковать плохие claim'ы, чтобы они не портили будущие ответы.
+
+**Как claim попадает в очередь** ([feedback_service.py](backend/app/features/scientific_kb/feedback_service.py)):
+1. `evaluate_rag_answer` показал `faithfulness < 0.8` для конкретного source-claim → `signal=review_required`
+2. Пользователь жмёт 👎 на ответ RAG → создаётся такое же событие
+3. Event сохраняется в `scikb_feedback_events`, target claim попадает в `scikb_review_queue`
+
+**Что делает пользователь**:
+- **Approve** → `claim.confidence_score += 0.05`
+- **Reject** → `claim.confidence_score -= 0.10`
+- Изменённый confidence учитывается hybrid-формулой через `δ·claim_confidence` — отвергнутые claim'ы падают в ранжировании, одобренные растут.
+
+---
+
+## Сценарий: пользователь ищет «двоичный поиск» в разделе Лаб.
+
+Допустим, пользователь открыл `/lab`, режим `hybrid` (по умолчанию), вводит `двоичный поиск` и жмёт **Найти**.
+
+### Шаг 1 — Frontend → Backend
+
+`LabPage.tsx:runSearch` → `searchHybrid("двоичный поиск", 8)` → `POST /v1/search/hybrid {"query":"двоичный поиск","top_k":8}`.
+
+### Шаг 2 — Backend разбор запроса
+
+В [search.py:search_hybrid](backend/app/features/scientific_kb/search.py) запускаются **все три** канала с `top_k*3 = 24` кандидатов в каждом + activation:
+
+**Keyword channel** ([_expanded_query_tokens](backend/app/features/scientific_kb/utils.py)):
+```
+tokens: ["двоичный", "поиск"]
+expanded (через ALIASES): ["двоичный", "поиск", "бинарный", "поиск перебором"]
+→ Counter overlap с каждым chunk/claim
+```
+Высший keyword-score получают claim'ы с буквальной фразой «двоичный поиск» (около 8-10 в корпусе).
+
+**Semantic channel** (pgvector HNSW):
+```
+vec = embed("двоичный поиск")  # 384-dim
+SELECT chunk_id FROM scikb_embeddings
+WHERE target_kind = 'chunk'
+ORDER BY embedding <=> :vec  -- cosine distance
+LIMIT 24;
+```
+Высший semantic-score — у chunk'ов из всех 4 статей кластера «Поиск» + bridge-статей («Сортировка как предусловие», «Индекс работает по принципу двоичного поиска») — близкий вектор по теме.
+
+**Graph channel**:
+```
+activation_keys("двоичный поиск") → ["двоичный", "поиск", ...]
+activation_index["двоичный"] → {claim_ids: [claim_A, claim_B, ...]}
++ neighbors через SUPPORTS/EXTENDS/LIMITS → ещё claim_ids
+```
+
+**Activation step** дополнительно поднимает activation_bonus=1.0 для claim'ов, явно активированных вопросом.
+
+### Шаг 3 — Подсчёт 7-компонентного score для каждого hit
+
+Для одного найденного claim'а (например, `claim_b1e5...` = «Двоичный поиск — это алгоритм поиска значения в отсортированном массиве…»):
+
+| Компонент | Значение | Вес | Вклад |
+|---|---|---|---|
+| keyword (точное совпадение «двоичный поиск») | 1.0 | α=0.15 | 0.150 |
+| semantic (cosine similarity вектора) | 0.91 | β=0.35 | 0.319 |
+| graph (+ activation_bonus 0.5) | 0.65 | γ=0.20 | 0.130 |
+| claim_confidence | 0.78 | δ=0.10 | 0.078 |
+| evidence_strength | 0.82 | ε=0.15 | 0.123 |
+| source_reliability | 0.75 | ζ=0.05 | 0.038 |
+| − contradiction_risk | 0.05 | η=0.10 | −0.005 |
+| **Итог** | | | **0.833** |
+
+Все 7 компонент вернутся в `score_breakdown` каждого hit'а.
+
+### Шаг 4 — Что увидит пользователь
+
+В Lab откроется два колонки:
+
+**Слева — список 8 hits**:
+```
+[CLAIM] 0.833  Двоичный поиск
+        Двоичный поиск — это алгоритм поиска значения в отсортированном…
+
+[CLAIM] 0.812  Двоичный поиск в отсортированном массиве
+        Алгоритм работает так: программа берёт средний элемент массива…
+
+[CHUNK] 0.798  Двоичный поиск в отсортированном массиве / Метод
+        Алгоритм работает так: программа берёт средний элемент массива…
+...
+```
+
+**Справа — ScoreBreakdown выбранного hit**: stacked bar chart с 7 компонентами + явные веса α/β/γ/δ/ε/ζ/η. Видно, какой канал больше всего сделал ранжирование.
+
+### Шаг 5 — Что произойдёт с весами при approve/reject
+
+В Lab'е секции «Найти» нет approve/reject — это про **поиск**, не про обратную связь. Approve/reject доступны двумя путями:
+
+**Путь A — через RAG-ответ.** Пользователь вводит в секции «Спросить» вопрос «Что такое двоичный поиск?» и нажимает 👎. Тогда:
+
+```
+1) submit_feedback({
+     target_id: top_source_claim_id (например, claim_b1e5...),
+     signal: "review_required",
+     payload: {rag_answer_id: rag.id}
+   })
+
+2) apply_feedback_event(event):
+   - claim.confidence_score = max(0.05, claim.confidence_score - 0.05)
+   - claim.evidence_strength = max(0.05, claim.evidence_strength - 0.025)
+   - все его SUPPORTS-рёбра: weight = max(0.05, weight - 0.015)
+
+3) Если signal == "review_required":
+   review_queue["rv_xxx"] = {
+     item_type: "claim",
+     item_id: claim_b1e5...,
+     status: "open",
+     reason: "RAG-feedback signal: review_required"
+   }
+```
+
+**Путь B — через очередь проверки.** Открыв секцию «Очередь проверки», пользователь видит `claim_b1e5...` со статусом `open`. Жмёт **Approve** или **Reject**:
+
+| Действие | Что меняется в Neo4j (`update_claim_properties`) |
+|---|---|
+| **Approve** | `confidence_score = min(0.99, confidence + 0.05)` · `evidence_strength = min(0.99, evidence_strength + 0.025)` · `review_queue.status = "resolved"` |
+| **Reject** | `confidence_score = max(0.05, confidence − 0.10)` · все исходящие SUPPORTS-рёбра: `weight = max(0.05, weight − 0.05)` · `review_queue.status = "rejected"` |
+
+### Шаг 6 — Эффект на следующий поиск
+
+Тот же запрос `двоичный поиск` после **reject** этого claim'а:
+
+| Компонент | До reject | После reject | Изменение |
+|---|---|---|---|
+| keyword | 1.0 | 1.0 | — |
+| semantic | 0.91 | 0.91 | — |
+| graph | 0.65 | 0.61 | SUPPORTS-вес снизился → graph бонус меньше |
+| **claim_confidence** | **0.78** | **0.68** | **−0.10** |
+| evidence_strength | 0.82 | 0.82 | — |
+| **Итог** | **0.833** | **0.815** | **−0.018** |
+
+Reject сдвигает claim вниз в выдаче, и в следующем RAG-ответе он попадёт в evidence только если выше нет альтернатив. Несколько rejects подряд → claim становится «токсичным» для системы и эффективно выпадает из поиска.
+
+Approve работает наоборот: рост confidence медленный (+0.05 за раз), но устойчивый — это защита от спам-голосования.
+
+---
+
 
 | # | Требование | Где реализовано |
 |---|---|---|
