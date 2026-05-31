@@ -171,10 +171,21 @@ class PgVectorAdapter:
         query_vector: list[float],
         *,
         threshold: float = 0.92,
-        exclude_publication_id: str | None = None,  # noqa: ARG002 — для совместимости
+        exclude_target_id: str | None = None,
+        exclude_publication_id: str | None = None,  # noqa: ARG002 — резервно, не используется здесь
     ) -> dict[str, Any] | None:
-        results = self.search_similar_claims(query_vector, top_k=3)
+        """Ищет похожий claim среди embeddings.
+
+        `exclude_target_id` — критически важен: без него лукап нашёл бы
+        тот же самый claim, который мы ищем (similarity=1.0), и pipeline
+        создал бы self-loop SUPPORTS-связь claim → claim. Этот баг
+        реально воспроизводился (68 self-loops на 68 claims в bootstrap).
+        """
+        # Берём top-5 чтобы было что отсеять при exclude.
+        results = self.search_similar_claims(query_vector, top_k=5)
         for row in results:
+            if exclude_target_id is not None and row.get("target_id") == exclude_target_id:
+                continue
             if row["similarity"] >= threshold:
                 return row
         return None

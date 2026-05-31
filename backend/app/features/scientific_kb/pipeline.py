@@ -273,12 +273,19 @@ class ScientificPipelineMixin:
                 near = pgvector.find_near_duplicate_claim(
                     vec,
                     threshold=0.96,
+                    exclude_target_id=claim.id,        # защита от self-match
                     exclude_publication_id=publication_id,
                 )
                 if not near:
                     continue
                 existing_id = near.get("id")
                 if existing_id is None or existing_id not in self.claims:
+                    continue
+                # Двойная защита: явная проверка self-id и проверка
+                # внутрипубликационного дубликата.
+                if existing_id == claim.id:
+                    continue
+                if self.claims[existing_id].publication_id == publication_id:
                     continue
                 # Дополнительное условие: оба claims должны быть одного
                 # claim_type. Иначе это не "дубль", а связанные утверждения

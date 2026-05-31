@@ -216,7 +216,8 @@ hybrid_score = α·keyword + β·semantic + γ·(graph + 0.5·activation)
 
 Полный аудит того, что система извлекла из корпуса:
 
-- **Сущности** (`ScientificEntity`): канонические понятия из ontology с aliases (`Method` / `Model` / `Tool` / `Metric` / `Task` / `Dataset` / `ResearchField`).
+- **Сущности** (`ScientificEntity`): канонические понятия из ontology с aliases (`Method` / `Model` / `Tool` / `Metric` / `Task` / `Dataset`).
+- **Тематические области** (`ResearchField`): **отдельный тип узла** в Neo4j (не запись в реестре `ScientificEntity`), `id = name`. Создаётся через `MERGE (f:ResearchField {name})` на основе `publication.metadata.research_field`. Связан только входящим ребром `(:Publication)-[:BELONGS_TO_FIELD]->(:ResearchField)`. Подробнее: [docs/data_model.md §4.1](docs/data_model.md).
 - **Связи** (`ClaimRelation`): направленные рёбра claim ↔ claim четырёх типов:
   - **SUPPORTS** — определение/метод из разных публикаций согласуются
   - **EXTENDS** — один claim явно развивает идею другого (text marker «развивает / опирается на»)

@@ -4,6 +4,7 @@ import {
   getClaimEvidence,
   getEntity,
   getPublication,
+  listPublications,
 } from '../../shared/api/scientificKb'
 import type {
   Chunk,
@@ -65,6 +66,11 @@ type PipelineData =
       claims: Claim[]
       publications: Publication[]
     }
+  | {
+      kind: 'research_field'
+      fieldName: string
+      publications: Publication[]
+    }
 
 export function NodePipeline({ node, locale }: { node: GraphNode; locale: Locale }) {
   const [data, setData] = useState<PipelineData>({ kind: 'loading' })
@@ -76,11 +82,15 @@ export function NodePipeline({ node, locale }: { node: GraphNode; locale: Locale
     let cancelled = false
 
     // Определяем тип узла. ScientificEntity-узлы в Neo4j отдаются с kind =
-    // entity_type (Method/Tool/Dataset/Metric/Task/Model/ResearchField), а не
-    // строкой "ScientificEntity" — поэтому смотрим на конкретные значения.
+    // entity_type (Method/Tool/Dataset/Metric/Task/Model), а ResearchField
+    // и Publication/ScientificClaim — со своим kind. Каждый случай требует
+    // своего endpoint'а; в частности ResearchField НЕ существует в реестре
+    // ScientificEntity и /v1/knowledge/entities/{id} вернёт 404 (баг,
+    // приведший к ошибке "entity not found" в правой панели).
     const kind = node.kind
     const isPublication = kind === 'Publication'
     const isClaim = kind === 'ScientificClaim'
+    const isResearchField = kind === 'ResearchField'
 
     const fetchData = async () => {
       try {
@@ -117,6 +127,17 @@ export function NodePipeline({ node, locale }: { node: GraphNode; locale: Locale
             chunk: evidence.chunk,
             publication: evidence.publication,
             job,
+          })
+        } else if (isResearchField) {
+          // ResearchField — это не сущность в реестре, а тематическая область
+          // (узел в Neo4j с id = name). Показываем список публикаций области.
+          const fieldName = node.label || node.id
+          const publications = await listPublications({ research_field: fieldName })
+          if (cancelled) return
+          setData({
+            kind: 'research_field',
+            fieldName,
+            publications,
           })
         } else {
           // Все остальные типы — это entities (Method, Tool, Metric, ...).
@@ -264,6 +285,56 @@ export function NodePipeline({ node, locale }: { node: GraphNode; locale: Locale
         )}
 
         <PipelineSteps job={job} locale={locale} />
+      </section>
+    )
+  }
+
+  if (data.kind === 'research_field') {
+    const { fieldName, publications } = data
+    return (
+      <section className="pipeline-section card-section">
+        <b className="card-section-title">
+          {locale === 'ru' ? '🗂 Тематическая область' : '🗂 Research field'}
+        </b>
+
+        <div className="pipeline-row">
+          <span className="pipeline-icon">🏷️</span>
+          <div className="pipeline-row-body">
+            <b>{locale === 'ru' ? 'Область' : 'Field'}</b>
+            <span className="pipeline-row-title">{fieldName}</span>
+            <span className="pipeline-row-meta">
+              {locale === 'ru'
+                ? 'Тематическая группировка публикаций по разделу школьной программы'
+                : 'Topical grouping of publications by curriculum area'}
+            </span>
+          </div>
+        </div>
+
+        <div className="pipeline-row">
+          <span className="pipeline-icon">📄</span>
+          <div className="pipeline-row-body">
+            <b>{locale === 'ru' ? 'Публикации в области' : 'Publications in field'} ({publications.length})</b>
+            {publications.length === 0 ? (
+              <span className="pipeline-row-meta">
+                {locale === 'ru' ? 'Нет публикаций' : 'No publications'}
+              </span>
+            ) : (
+              <ul className="pipeline-list">
+                {publications.slice(0, 10).map((p) => (
+                  <li key={p.id} title={p.id}>
+                    {p.title}
+                    {p.year && <span className="pipeline-row-meta"> · {p.year}</span>}
+                  </li>
+                ))}
+                {publications.length > 10 && (
+                  <li className="pipeline-list-more">
+                    {locale === 'ru' ? `и ещё ${publications.length - 10}…` : `and ${publications.length - 10} more…`}
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+        </div>
       </section>
     )
   }

@@ -182,6 +182,24 @@ Resolve review-item ([feedback_service.py](../backend/app/features/scientific_kb
 (:ScientificClaim)-[:EXTENDS     {weight}]->(:ScientificClaim)
 ```
 
+**Узлы**:
+
+| Метка | Идентификатор | Свойства | Откуда |
+|---|---|---|---|
+| `Publication` | `id = pub_<16hex>` | title, abstract, year, authors[], organizations[], status, source_type | upload или demo |
+| `ScientificClaim` | `id = claim_<16hex>` | claim_text, claim_type, subject_entity, predicate, object_entity, evidence_text, confidence_score, evidence_strength, source_reliability | extraction |
+| `ScientificEntity` | `id = ent_<16hex>` | canonical_name, entity_type ∈ {Method, Model, Dataset, Metric, Task, Tool, Limitation, Result}, aliases[] | ontology + LLM |
+| `DocumentChunk` | `id = chunk_<16hex>` | text, section, page_start, page_end, chunk_index, content_hash | semantic chunking |
+| **`ResearchField`** | **`name = "Алгоритмы..."` (id = имя)** | только `name` | `publication.metadata.research_field` |
+
+`ResearchField` — особый случай: это не запись в реестре `ScientificEntity`,
+а отдельный тип узла, обозначающий тематическую область публикаций. Имя
+области берётся из метаданных публикации, выбирается из закрытого списка
+12 школьных областей в [ontology.py](../backend/app/features/scientific_kb/ontology.py)
+(см. подробнее [data_model.md §4.1](data_model.md)). Из-за особого `id = name`
+(не `_stable_id`-хеш), endpoint `/v1/knowledge/entities/{id}` для них **не работает** —
+для деталей области используется `GET /v1/publications?research_field=<name>`.
+
 Уникальные constraint'ы на `id` создаются автоматически в
 [neo4j_adapter.py](../backend/app/features/scientific_kb/persistence/neo4j_adapter.py).
 

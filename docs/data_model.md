@@ -168,6 +168,74 @@ Neo4jAdapter ([persistence/neo4j_adapter.py](../backend/app/features/scientific_
 Авторы и организации хранятся **как поля Publication** (`p.authors[]`,
 `p.organizations[]`) — это упрощает граф (нет отдельных WROTE-рёбер).
 
+### 4.1. ResearchField — тематическая область (особый случай)
+
+`ResearchField` — это **отдельный тип узла**, не запись в реестре
+`ScientificEntity`. Концептуально это тематическая группировка публикаций
+по разделу программы (для школьного корпуса: «Алгоритмы и структуры
+данных», «Базы данных для начинающих», «Школьная математика» и т.д.).
+
+**Чем отличается от других узлов:**
+
+| Свойство | `ResearchField` | `ScientificEntity` / прочие |
+|---|---|---|
+| Метка Neo4j | `ResearchField` | `ScientificEntity` (далее по `entity_type`) |
+| Идентификатор `id` | `name` (сама строка) | `ent_<16hex>` (`_stable_id`) |
+| Свойства | `name` | `id`, `canonical_name`, `entity_type`, `aliases[]`, `confidence_score` |
+| Откуда берётся | Метаданные публикации (`publication.metadata.research_field`) | Извлечение из текста (rule-based + LLM) |
+| Aliases | Нет | Да (через `ALIASES` в [ontology.py](../backend/app/features/scientific_kb/ontology.py)) |
+| Endpoint для деталей | `GET /v1/publications?research_field=<name>` (список публикаций области) | `GET /v1/knowledge/entities/{id}` |
+| Constraint в Neo4j | `CREATE CONSTRAINT field_name FOR (n:ResearchField) REQUIRE n.name IS UNIQUE` | `CREATE CONSTRAINT entity_id FOR (n:ScientificEntity) REQUIRE n.id IS UNIQUE` |
+
+**Создание**: при `upsert_publication` для каждой публикации, у которой
+заполнен `metadata.research_field`, выполняется:
+```cypher
+MERGE (f:ResearchField {name: $name})
+WITH f
+MATCH (p:Publication {id: $pid})
+MERGE (p)-[:BELONGS_TO_FIELD]->(f)
+```
+
+**Откуда берётся имя области**: функция
+[`_primary_research_field`](../backend/app/features/scientific_kb/seed.py)
+вычисляет область при bootstrap'е на основе:
+1. `subject_entity`/`object_entity` claims публикации — если они есть
+   в `RESEARCH_FIELDS_FOR_METHOD` ([ontology.py](../backend/app/features/scientific_kb/ontology.py)),
+   берётся соответствующая область;
+2. упомянутых в публикации `ResearchField`-сущностей онтологии;
+3. в качестве запасного варианта — без области (поле `null`).
+
+**Доступные области** (см. `ONTOLOGY["ResearchField"]` в
+[ontology.py](../backend/app/features/scientific_kb/ontology.py)):
+
+- Школьная алгебра
+- Школьная геометрия
+- Начала математического анализа
+- Школьная теория вероятностей
+- Школьная математическая статистика
+- Школьная информатика
+- Алгоритмы и структуры данных
+- Базы данных для начинающих
+- Теория графов для школы
+- Дискретная математика для школы
+- Школьная математическая логика
+- Численные методы для школы
+
+**Связи `ResearchField` в графе**: только входящие `BELONGS_TO_FIELD` от
+публикаций. Из области исходящих рёбер нет. То есть это **листовой узел**
+в DAG графа знаний.
+
+**Где видится в UI**:
+- В 3D-графе — отдельным цветом, обычно отличающимся от Method/Tool/Metric;
+- В правой панели свойств (NodePipeline.tsx) — отдельный рендер `kind === 'research_field'`: показывается название области + список публикаций (топ-10 + счётчик «и ещё N»). Без 12-шагового pipeline — у области нет своего `processing_job`;
+- В фильтрах `/v1/publications` — параметр `research_field=<name>` отдаёт публикации области.
+
+**Подводный камень для разработчика**: ранее [`NodePipeline.tsx`](../frontend/src/features/graph/NodePipeline.tsx)
+для всех узлов, отличных от Publication и ScientificClaim, вызывал
+`getEntity(node.id)`. Для `ResearchField` это давало 404 — потому что
+имя области не существует в реестре `ScientificEntity`. Фикс: отдельная
+ветка `kind === 'ResearchField'` вызывает `listPublications({research_field})`.
+
 ### Стабильные content-hash ID
 
 Все ID (`pub_<16hex>`, `chunk_<16hex>`, `claim_<16hex>`, `ent_<16hex>`,

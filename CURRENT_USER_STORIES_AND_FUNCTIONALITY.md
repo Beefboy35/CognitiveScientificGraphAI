@@ -604,6 +604,18 @@ claim_relations, scientific_entities, entity_aliases/mentions, и т.д.)
 `DocumentChunk`, `ResearchField`. Авторы и организации хранятся как поля
 Publication (массивы).
 
+**`ResearchField` — особый узел**: это **отдельный тип** в Neo4j, а не
+запись в реестре `ScientificEntity`. Используется как тематическая
+группировка публикаций (12 школьных областей из
+[ontology.py](backend/app/features/scientific_kb/ontology.py): «Алгоритмы
+и структуры данных», «Базы данных для начинающих», «Школьная математика»
+и т.д.). Идентификатор узла — **сама строка-название** (`id = name`),
+а не stable_id-хеш. Создаётся при `upsert_publication` через
+`MERGE (f:ResearchField {name})` на основе `publication.metadata.research_field`.
+Endpoint `/v1/knowledge/entities/{id}` для `ResearchField` не работает
+(возвращает 404) — для деталей области нужен
+`GET /v1/publications?research_field=<name>`. Подробнее: [data_model.md §4.1](docs/data_model.md).
+
 Рёбра: `CONTAINS_CHUNK`, `CONTAINS_CLAIM`, `BELONGS_TO_FIELD`, `CITES`,
 `MENTIONS_ENTITY`, `EVALUATED_BY`, и взвешенные claim↔claim связи
 `SUPPORTS`, `CONTRADICTS`, `LIMITS`, `EXTENDS` с атрибутами `weight`,
