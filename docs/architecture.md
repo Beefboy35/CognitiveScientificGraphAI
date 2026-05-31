@@ -7,6 +7,183 @@
 > (auth, jobs, RAG-history, evaluations, feedback) + единая таблица
 > `scikb_embeddings` (pgvector + HNSW) для векторного поиска.
 
+## 0. Архитектура серверной части
+
+Backend FastAPI разложен по 5 слоям. Стрелки показывают направление
+вызовов (сверху вниз). Каждый слой не знает о слое ниже как о конкретной
+реализации — общается через интерфейс адаптера.
+
+```mermaid
+flowchart TB
+    subgraph Client["Внешний клиент"]
+        direction LR
+        Browser["Браузер / SPA<br/>React+Vite"]
+        ExtAPI["Внешний API-клиент<br/>(curl / Python / другой сервис)"]
+    end
+
+    subgraph L1["1. HTTP / Cross-cutting (app/main.py)"]
+        direction TB
+        Uvicorn["Uvicorn ASGI<br/>порт 8000"]
+        Middleware["Middleware:<br/>• correlation-id (cid-...)<br/>• prometheus latency/counter<br/>• CORS"]
+        ExHand["Exception handlers<br/>(ApiError единый формат)"]
+        StaticFiles["StaticFiles /static"]
+    end
+
+    subgraph L2["2. API Routers (app/api/)"]
+        direction LR
+        AuthRouter["auth.py<br/>5 endpoint'ов<br/>POST /v1/auth/login и т.д."]
+        SciRouter["scientific_kb.py<br/>~50 endpoint'ов:<br/>publications · pipeline · knowledge<br/>activation · search · rag · graph<br/>evaluation · feedback · review · export"]
+        ApiCommon["common.py<br/>ApiError, dump()"]
+    end
+
+    subgraph L3["3. Доменные сервисы (app/features/)"]
+        direction TB
+        AuthSvc["auth/<br/>JWT access+refresh<br/>bcrypt password hashing"]
+        subgraph KB["scientific_kb/ (12+ модулей)"]
+            direction TB
+            Service["service.py<br/>ScientificKnowledgeBase<br/>агрегат: все mixin'ы + state"]
+            Pipeline["pipeline.py<br/>12 шагов с retry"]
+            Extract["extraction.py<br/>rule + LLM extraction"]
+            Search["search.py<br/>keyword/semantic/graph/hybrid"]
+            RagSvc["rag.py<br/>ask_with_evidence<br/>+ honest refusal"]
+            FeedbackSvc["feedback_service.py<br/>apply weight deltas<br/>review queue"]
+            GraphReader["graph.py<br/>Cypher subgraph queries"]
+            Singleton["singleton.py<br/>scientific_kb global<br/>+ bootstrap_persistence"]
+        end
+    end
+
+    subgraph L4["4. Persistence (app/features/scientific_kb/persistence/)"]
+        direction LR
+        Manager["manager.py<br/>PersistenceManager<br/>(fan-out / graceful fallback)"]
+        Neo4jAd["neo4j_adapter.py<br/>Cypher MERGE/MATCH<br/>+ batch_fetch_by_ids"]
+        PgAd["postgres_adapter.py<br/>SQLAlchemy 2<br/>(jobs/runs/rag/eval/...)"]
+        PgVecAd["pgvector_adapter.py<br/>scikb_embeddings<br/>HNSW cosine"]
+    end
+
+    subgraph L5["5. Хранилища (внешние сервисы)"]
+        direction LR
+        Neo4j[("Neo4j 5.26<br/>граф знаний<br/>(источник истины)")]
+        Postgres[("PostgreSQL 15 + pgvector<br/>11 операц. таблиц<br/>+ scikb_embeddings vec(384)")]
+    end
+
+    subgraph LLM["Опц. внешний LLM"]
+        direction TB
+        OpenRouter["app/core/openrouter.py<br/>HTTPS клиент"]
+        LLMExt["llm_extractor.py<br/>extract_chunk(text)<br/>chunk-level cache"]
+        OR[("OpenRouter API<br/>openai/gpt-4o-mini")]
+    end
+
+    subgraph EMB["Embeddings"]
+        Embedder["embedding_service.py<br/>sentence-transformers<br/>(или deterministic fallback)"]
+    end
+
+    Browser -->|HTTP +JWT| Uvicorn
+    ExtAPI -->|HTTP +JWT| Uvicorn
+    Uvicorn --> Middleware --> ExHand --> StaticFiles
+    StaticFiles --> AuthRouter & SciRouter
+    SciRouter --> ApiCommon
+    AuthRouter --> AuthSvc
+    SciRouter --> Service
+    Service --> Pipeline & Search & RagSvc & FeedbackSvc & GraphReader
+    Pipeline --> Extract --> LLMExt --> OpenRouter --> OR
+    Extract --> Embedder
+    Pipeline --> Embedder
+    Search --> PgVecAd
+    Service -.->|singleton ref| Singleton
+    Singleton -->|init + bootstrap| Manager
+    Service & Pipeline & RagSvc & FeedbackSvc & GraphReader --> Manager
+    Manager --> Neo4jAd & PgAd & PgVecAd
+    Neo4jAd -->|Bolt 7687| Neo4j
+    PgAd -->|psycopg2 5432| Postgres
+    PgVecAd -->|psycopg2 5432| Postgres
+    AuthSvc -->|users table| Postgres
+
+    classDef storage fill:#1a3a5a,stroke:#22d3ee,color:#fff
+    class Neo4j,Postgres,OR storage
+```
+
+### Слои и их роли
+
+| Слой | Что | Технологии |
+|---|---|---|
+| **1. HTTP / Cross-cutting** | uvicorn ASGI, middleware, exception handlers — то, что находится перед роутерами и работает на каждый запрос | Uvicorn · Starlette · prometheus_client |
+| **2. API Routers** | Декларация endpoint'ов, парсинг Pydantic-схем, маппинг HTTP-кодов в `ApiError`. Логики тут нет — только маршрутизация в сервисы | FastAPI |
+| **3. Доменные сервисы** | `ScientificKnowledgeBase`-агрегат с миксинами (Pipeline / Extraction / Search / RAG / Feedback / Graph). JWT-auth-сервис | чистый Python + dataclass'ы |
+| **4. Persistence (адаптеры)** | Каждый адаптер — отдельный класс с методом `is_active()`. `PersistenceManager` делает fan-out на все три. При падении соединения адаптер логирует warning и возвращает `None` → graceful degradation | SQLAlchemy 2 · neo4j-python-driver · pgvector |
+| **5. Внешние хранилища** | Neo4j 5 (граф), PostgreSQL 15 + pgvector (операционные + векторы) | Docker-контейнеры |
+
+### Сторонние интеграции (вне слоёв)
+
+| Сервис | Назначение | Активация |
+|---|---|---|
+| **OpenRouter** | LLM-извлечение сущностей и claims (gpt-4o-mini) | при `OPENROUTER_API_KEY` + `EXTRACTION_MODE=hybrid\|llm` |
+| **sentence-transformers** | Векторизация text → 384-dim embeddings | при наличии пакета, иначе детерминированный hash-fallback |
+| **Adminer** | UI для PostgreSQL | dev-профиль, порт 8080 |
+| **Neo4j Browser** | UI для Cypher-запросов | dev-профиль, порт 7474 |
+| **Prometheus + Grafana** | Метрики (опц.) | профиль `monitoring` |
+
+### Ключевые архитектурные решения
+
+1. **Neo4j-first** — граф знаний живёт **только** в Neo4j. PG хранит лишь операционные данные (jobs/runs/eval/feedback/users) + единую таблицу `scikb_embeddings`. Никакого дублирования графа в PG.
+
+2. **Mixin-агрегат `ScientificKnowledgeBase`** — не классическая «service per file» декомпозиция, а композиция 6 mixin'ов в одном объекте. Это даёт shared in-memory state (`publications`/`chunks`/`claims`/...) для всех операций без передачи через параметры. Минус: единый бог-класс, плюс: высокая cohesion и простой код.
+
+3. **Graceful degradation адаптеров** — каждый адаптер при первом обращении пытается подключиться; при ошибке логирует warning и возвращает `is_active()=False`. Сервисы работают на in-memory state. Это позволяет запускать тесты без поднятой инфраструктуры.
+
+4. **Stable content-hash IDs** ([utils.py:_stable_id](../backend/app/features/scientific_kb/utils.py)) — все id'шники узлов и рёбер детерминированно вычисляются как SHA256 от контентных полей. Cypher `MERGE` идемпотентен между рестартами.
+
+5. **Cache-miss fallback** — `search.py` и `rag.py` сначала ищут в in-memory state, при miss дергают Cypher batch-fetch из Neo4j. Критично для семантического поиска: pgvector возвращает `target_id`, который при отсутствии в кэше резолвится через `fetch_chunks_by_ids` / `fetch_claims_by_ids`.
+
+6. **JWT с auto-refresh** — access 15 мин, refresh 14 дней; frontend `apiFetch` при 401 прозрачно обновляет токен и повторяет запрос. Stateless — на бэке нет blacklist'а refresh-токенов.
+
+### Файловая карта серверной части
+
+```
+backend/app/
+├── main.py                    # uvicorn entrypoint + lifespan + middleware
+├── api/                       # ── Слой 2: HTTP routers ──
+│   ├── auth.py                # /v1/auth/* (5 endpoints)
+│   ├── scientific_kb.py       # /v1/* (~50 endpoints)
+│   └── common.py              # ApiError, dump()
+├── core/
+│   └── openrouter.py          # HTTPS client (используется в LLM extractor)
+├── config/
+│   ├── settings.py            # Pydantic Settings: env vars, weights
+│   └── environments/          # dev/stage/prod overrides
+├── db/
+│   ├── base.py                # SQLAlchemy DeclarativeBase
+│   └── models.py              # User (для JWT auth)
+└── features/                  # ── Слой 3: доменные сервисы ──
+    ├── auth/
+    │   ├── service.py         # AuthService: register/login/refresh
+    │   └── dependencies.py    # FastAPI Depends(get_current_user)
+    └── scientific_kb/
+        ├── service.py         # ScientificKnowledgeBase агрегат (все mixin'ы)
+        ├── pipeline.py        # 12-шаговый orchestrator с retry
+        ├── extraction.py      # rule-based + LLM extraction
+        ├── search.py          # 4 режима поиска + 7-компонентная формула
+        ├── rag.py             # ask_with_evidence + honest refusal
+        ├── feedback_service.py# apply weight deltas + review queue
+        ├── graph.py           # Cypher subgraph queries для /v1/graph/*
+        ├── embedding_service.py # sentence-transformers + fallback
+        ├── llm_extractor.py   # OpenRouter обёртка с chunk-cache
+        ├── ontology.py        # русская школьная онтология (200+ имён)
+        ├── seed.py            # 12 авторов + 6 организаций + 24 цитирования
+        ├── demo.py            # 20 русскоязычных статей в 5 кластерах
+        ├── models.py          # dataclass-модели (ClaimRelation.created_by)
+        ├── orm.py             # 11 операц. SQLAlchemy 2 моделей scikb_*
+        ├── serialization.py   # dump() для API ответов
+        ├── singleton.py       # глобальный scientific_kb + bootstrap
+        ├── utils.py           # _stable_id + sentences + helpers
+        └── persistence/       # ── Слой 4: адаптеры ──
+            ├── manager.py     # PersistenceManager (fan-out)
+            ├── neo4j_adapter.py
+            ├── postgres_adapter.py
+            └── pgvector_adapter.py
+```
+
+---
+
 ## 1. Компонентная диаграмма
 
 ```mermaid
@@ -148,6 +325,9 @@ hybrid_score = α·keyword
 ([ScoreBreakdown.tsx](../frontend/src/shared/ui/ScoreBreakdown.tsx)).
 
 ## 5. Feedback Loop
+
+Подробное описание 8 метрик качества RAG-ответов (формулы, диапазоны,
+интерпретация), пример полного расчёта — в [evaluation_metrics.md](evaluation_metrics.md).
 
 ```
 RAG answer evaluation (8 metrics)

@@ -139,6 +139,9 @@ curl -X POST http://localhost:8000/v1/rag/ask-with-evidence \
 `answer_completeness`, `citation_correctness`, `limitation_honesty`,
 `reasoning_trace_quality`, `contradiction_awareness`.
 
+Подробное описание каждой метрики (что измеряет, формула, диапазон,
+интерпретация, пример полного расчёта) — в [evaluation_metrics.md](evaluation_metrics.md).
+
 ## Export
 
 | Метод | Путь | Описание |

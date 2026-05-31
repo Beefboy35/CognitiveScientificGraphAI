@@ -210,7 +210,7 @@ hybrid_score = α·keyword + β·semantic + γ·(graph + 0.5·activation)
 
 **Honest refusal**: если `strong_hits < 2` или `coverage < 0.16`, RAG отказывается отвечать. Это защита от галлюцинаций — лучше «недостаточно данных», чем выдуманный ответ.
 
-**Evaluation**: кнопка «Оценить» считает 8 метрик (faithfulness, hallucination_rate, citation_correctness, contradiction_awareness, и др.) и автоматически создаёт feedback_event для каждого source-claim'а.
+**Evaluation**: кнопка «Оценить» считает 8 метрик (faithfulness, hallucination_rate, citation_correctness, contradiction_awareness, и др.) и автоматически создаёт feedback_event для каждого source-claim'а. Подробное описание каждой метрики, формулы и примеры — в [docs/evaluation_metrics.md](docs/evaluation_metrics.md).
 
 ### 3. Реестр сущностей и связей
 
