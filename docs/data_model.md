@@ -9,13 +9,6 @@
 
 ## 1. PostgreSQL — операционные таблицы
 
-После Neo4j-first рефакторинга PG содержит **11 таблиц** `scikb_*` +
-системную `users`. Все графовые таблицы (`scikb_publications`,
-`scikb_document_chunks`, `scikb_scientific_claims`, `scikb_claim_relations`,
-`scikb_scientific_entities`, `scikb_entity_aliases`, `scikb_entity_mentions`,
-`scikb_publication_authors`, `scikb_publication_citations` и т.д.) удалены —
-их роль выполняет Neo4j.
-
 ORM-модели: [backend/app/features/scientific_kb/orm.py](../backend/app/features/scientific_kb/orm.py).
 
 | Класс | Таблица | Назначение |
